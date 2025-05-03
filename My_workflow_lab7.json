@@ -1,0 +1,578 @@
+{
+  "name": "My workflow 2",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "57e163ff-f62f-49e8-b731-45b45ec55c97",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        2780,
+        540
+      ],
+      "webhookId": "c60f2a5b-7411-4c02-b0b0-e5edb17beaf8",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.message.document && $json.message.document.file_id ? true : false }}",
+              "operation": "notEqual"
+            }
+          ]
+        }
+      },
+      "id": "a8a518cb-cfea-44a7-b1ea-5b0d40ba0767",
+      "name": "Check for File",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3000,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "= {{$json.message.chat.id}}",
+        "text": "Please provide meeting details (e.g., date, time, duration, agenda points). You can also upload a JSON file with additional details if needed.",
+        "additionalFields": {}
+      },
+      "id": "ca906612-e6c6-40e0-9dd7-22a1468321f8",
+      "name": "Request Meeting Details",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        3020,
+        800
+      ],
+      "webhookId": "be02f0d0-2c06-4ba3-bde7-9ccbd7ec76fe",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!$json.message || !$json.message.text) {\n  return [{ json: { chatId: $json.message.chat.id, error: 'No text message provided. Please send meeting details as text.' } }];\n}\nreturn [{ json: { rawContent: $json.message.text, chatId: $json.message.chat.id } }];"
+      },
+      "id": "92ca71da-c1a4-4d5d-88f6-ac70c95b6ea2",
+      "name": "Validate Text Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "destinationKey": "=data",
+        "options": {}
+      },
+      "id": "a35dec62-7aa6-4523-92af-d7dbae927ae9",
+      "name": "Parse JSON File",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3-70b-8192\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an assistant that extracts structured meeting details.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Extract the following structured details from the input JSON: title, date (in YYYY-MM-DD format), time (in HH:MM format), duration (in hours), sender, recipients (as a list), attendees (as a list), agenda (as a list). If a field is missing, use default values (e.g., date: '2025-05-04', time: '10:00', duration: '1 hour', title: 'Meeting'). Input: Prompt: {{ $json.data.prompt }}\\nSender: {{ $json.data.sender }}\\nRecipients: {{ $json.data.recipients }}\\nAgenda: {{ $json.data.agenda }}\"\n    }\n  ],\n  \"temperature\": 0.7\n}",
+        "options": {}
+      },
+      "id": "8bfc180b-90db-4c84-a3cd-1da0b25791e6",
+      "name": "Extract Structured Details with LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3500,
+        540
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "EC9MPjJMmlTMrWNB",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "= {{$json.chatId}}",
+        "text": "= {{$json.error || 'Processing meeting details...'}}",
+        "additionalFields": {}
+      },
+      "id": "b106dc23-3bde-4768-a38e-663766111d3b",
+      "name": "Handle Parse Errors",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        3400,
+        860
+      ],
+      "webhookId": "bdd8b01c-89fa-4db4-8836-81dd03b935b8",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $(\"Parse JSON File\").all()[0].json.data;\nconst llmResponse = $input.first().json.choices[0].message.content;\n\nfunction parseStructuredText(text) {\n  let structuredData = {\n    date: \"2025-05-04\", // قيمة افتراضية\n    time: \"10:00\",       // قيمة افتراضية\n    duration: \"1 hour\",  // قيمة افتراضية\n    title: data.prompt || \"Meeting\" // قيمة افتراضية\n  };\n  const lines = text.split('\\n').map(line => line.trim()).filter(line => line);\n\n  lines.forEach(line => {\n    if (line.startsWith('- **')) {\n      const [key, value] = line.replace('- **', '').split('**: ');\n      if (key && value) {\n        if (value.startsWith('[') && value.endsWith(']')) {\n          structuredData[key.toLowerCase()] = JSON.parse(value);\n        } else {\n          structuredData[key.toLowerCase()] = value;\n        }\n      }\n    } else if (line.startsWith('- ')) {\n      const agendaMatch = line.match(/^- (.*)/);\n      if (agendaMatch && !structuredData.agenda) {\n        structuredData.agenda = [agendaMatch[1]];\n      } else if (agendaMatch) {\n        structuredData.agenda.push(agendaMatch[1]);\n      }\n    }\n  });\n\n  // دمج البيانات من الملف الأصلي\n  structuredData.sender = data.sender || structuredData.sender;\n  structuredData.recipients = data.recipients || structuredData.recipients;\n  structuredData.agenda = data.agenda || structuredData.agenda;\n\n  return structuredData;\n}\n\nlet parsedData;\ntry {\n  parsedData = parseStructuredText(llmResponse);\n} catch (error) {\n  return [{ json: { chatId: $json.chatId, error: `Failed to parse structured details: ${error.message}` } }];\n}\n\nreturn [{ json: parsedData }];"
+      },
+      "id": "5fdac436-bb61-4380-ae1b-aff38d2f176d",
+      "name": "Parse Structured Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3700,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst updatedItems = items.map((item) => {\n  item.json.chatId = 1337851433;\n  return item;\n});\nreturn updatedItems;\n"
+      },
+      "id": "bf683fbc-9f54-4336-aab2-9ade9c697c7a",
+      "name": "Format Agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3900,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Check for File').item.json.message.chat.id }}",
+        "text": "= {{$json.error || 'Meeting Details Extracted:\\n' +  $json.agenda }}",
+        "additionalFields": {}
+      },
+      "id": "c6f1fb44-a9aa-45fe-a93d-1026c676480f",
+      "name": "Send Structured Details to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        400
+      ],
+      "webhookId": "631d2940-a9c3-4bff-b454-3dd80fe452ca",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "georgenashaat54@gmail.com",
+          "mode": "list",
+          "cachedResultName": "georgenashaat54@gmail.com"
+        },
+        "start": "={{ $json.date + 'T' + ($json.time || '10:00') + ':00+03:00' }}",
+        "end": "={{ $json.date + 'T' + (parseInt($json.time.split(':')[0]) + 1) + ':00:00+03:00' }}",
+        "additionalFields": {
+          "conferenceDataUi": {
+            "conferenceDataValues": {
+              "conferenceSolution": "hangoutsMeet"
+            }
+          }
+        }
+      },
+      "id": "1dd3ea4a-1548-4c8f-bfe4-360643947de4",
+      "name": "Schedule Google Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        4100,
+        740
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "Gz9a6kxKefy8pV5l",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $credentials.groqApiKey }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3-70b-8192\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an assistant that generates detailed meeting transcripts based on the provided details.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a detailed meeting transcript for the following meeting:\\nTitle: {{ $json.summary || $json.title }}\\nDate: {{ $json.start.dateTime ? $json.start.dateTime.split('T')[0] : $json.date }}\\nTime: {{ $json.start.dateTime ? $json.start.dateTime.split('T')[1].split('+')[0] : $json.time }}\\nAgenda: {{ $json.agenda ? $json.agenda.join(', ') : 'Not specified' }}\\nAttendees: {{ $json.recipients ? $json.recipients.join(', ') : 'Not specified' }}\"\n    }\n  ],\n  \"temperature\": 0.7\n}",
+        "options": {}
+      },
+      "id": "8f85db39-0c26-416e-b302-c947c60a714e",
+      "name": "Generate Meeting Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4320,
+        740
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "EC9MPjJMmlTMrWNB",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Check for File').item.json.message.chat.id }}",
+        "text": "={{ $json.choices[0].message.content }}",
+        "additionalFields": {}
+      },
+      "id": "0e965d15-f5ce-4d93-9e35-c7b0f4cd5191",
+      "name": "Send Transcript to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        4560,
+        560
+      ],
+      "webhookId": "56eda171-1b48-40b3-9cdb-b33e51a7f9d9",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "groqApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3-70b-8192\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an assistant that generates a performance report for a meeting organizer based on the provided details.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Generate a performance report for the meeting organizer based on the following details:\\nTitle: {{ $json.summary || $json.title }}\\nDate: {{ $json.start.dateTime ? $json.start.dateTime.split('T')[0] : $json.date }}\\nTime: {{ $json.start.dateTime ? $json.start.dateTime.split('T')[1].split('+')[0] : $json.time }}\\nAgenda: {{ $json.agenda ? $json.agenda.join(', ') : 'Not specified' }}\\nAttendees: {{ $json.recipients ? $json.recipients.join(', ') : 'Not specified' }}\\nSender: {{ $json.sender || 'Not specified' }}\"\n    }\n  ],\n  \"temperature\": 0.7\n}",
+        "options": {}
+      },
+      "id": "547e184b-3286-4661-ac39-077043eff2b0",
+      "name": "Generate Performance Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4760,
+        740
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "EC9MPjJMmlTMrWNB",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "= {{$json.chatId}}",
+        "text": "Performance Report for Organizer:\n{{ $json.choices[0].message.content }}",
+        "additionalFields": {}
+      },
+      "id": "a335bec2-f960-462f-b731-27eb5608baa1",
+      "name": "Send Performance Report to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        5000,
+        520
+      ],
+      "webhookId": "1e469d87-872e-46ff-9b43-6edbd2673080",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.document.file_id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3180,
+        380
+      ],
+      "id": "a8c482b9-a333-44ac-90bb-0c6efa8fda07",
+      "name": "Telegram",
+      "webhookId": "029cefc7-c836-4976-9d3f-0fa0973d08cf",
+      "credentials": {
+        "telegramApi": {
+          "id": "dMgs1nxNoybEGN3E",
+          "name": "Telegram account 5"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Schedule Google Calendar Event').item.json.creator.email }} , {{ $('Format Agenda').item.json.recipients[0] }} , {{ $('Format Agenda').item.json.recipients[1] }} , {{ $('Format Agenda').item.json.recipients[2] }}",
+        "subject": "send report to attendees",
+        "message": "={{ $('Extract Structured Details with LLM').item.json.choices[0].message.content }}\n, \n/n{{ $('Generate Meeting Transcript').item.json.choices[0].message.content }} ,\n/n {{ $('Schedule Google Calendar Event').item.json.htmlLink }} \n/n{{ $('Schedule Google Calendar Event').item.json.hangoutLink }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        5120,
+        840
+      ],
+      "id": "39082670-9dc5-4297-a5dc-f55a31d28b9d",
+      "name": "Gmail",
+      "webhookId": "4860fa3f-b3fe-4aa3-8af2-e622177c8096",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "wCfcVKjVTpvG6vSd",
+          "name": "Gmail account 3"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check for File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for File": {
+      "main": [
+        [
+          {
+            "node": "Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request Meeting Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Meeting Details": {
+      "main": [
+        [
+          {
+            "node": "Validate Text Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Text Message": {
+      "main": [
+        [
+          {
+            "node": "Handle Parse Errors",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Structured Details with LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON File": {
+      "main": [
+        [
+          {
+            "node": "Extract Structured Details with LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Structured Details with LLM": {
+      "main": [
+        [
+          {
+            "node": "Parse Structured Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Structured Details": {
+      "main": [
+        [
+          {
+            "node": "Format Agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Agenda": {
+      "main": [
+        [
+          {
+            "node": "Send Structured Details to Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Schedule Google Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Google Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Generate Meeting Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Meeting Transcript": {
+      "main": [
+        [
+          {
+            "node": "Generate Performance Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Transcript to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Transcript to Telegram": {
+      "main": [
+        []
+      ]
+    },
+    "Generate Performance Report": {
+      "main": [
+        [
+          {
+            "node": "Send Performance Report to Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Performance Report to Telegram": {
+      "main": [
+        []
+      ]
+    },
+    "Telegram": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2559766e-8b41-4cec-ab00-244637406e3c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ac1f4739ea9a68daf47b983756c6179252b163b9de803f6c3d56c171c9c7d784"
+  },
+  "id": "njcqJNRoPJ7h6gli",
+  "tags": []
+}
